@@ -45,7 +45,6 @@ interface ProductFormDialogProps {
   onOpenChange: (open: boolean) => void;
   product: Product | null;
   type: 'gold' | 'silver';
-  // UPDATED: Added this prop
   isBestsellerOnly?: boolean; 
 }
 
@@ -140,21 +139,24 @@ export function ProductFormDialog({ open, onOpenChange, product, type, isBestsel
         const batch = writeBatch(firestore);
         
         if (isBestsellerOnly) {
-           // --- BESTSELLER ONLY LOGIC ---
-           // Save strictly to the 'bestsellers' collection.
-           const finalData = { ...productData, isBestseller: true };
+           // --- FIX: DUAL WRITE LOGIC ---
+           // When creating a Bestseller, force it to exist in 'products' too.
+           // This ensures checkout works correctly.
 
-           if (product) {
-             const docRef = doc(firestore, 'bestsellers', product.id);
-             batch.update(docRef, finalData);
-           } else {
-             const newRef = doc(collection(firestore, 'bestsellers'));
-             batch.set(newRef, { ...finalData, id: newRef.id });
-           }
+           const finalData = { ...productData, isBestseller: true };
+           
+           // If editing, use existing ID. If new, generate a new ID from products collection.
+           const docId = product ? product.id : doc(collection(firestore, 'products')).id;
+
+           const bestsellerRef = doc(firestore, 'bestsellers', docId);
+           const productRef = doc(firestore, 'products', docId);
+
+           // Use merge: true to avoid overwriting unrelated fields if they exist
+           batch.set(bestsellerRef, { ...finalData, id: docId }, { merge: true });
+           batch.set(productRef, { ...finalData, id: docId }, { merge: true });
 
         } else {
           // --- STANDARD LOGIC (Products Page) ---
-          // Save to 'products' and sync to 'bestsellers' if checked.
           
           if (product) { // Editing
             const productDocRef = doc(firestore, 'products', product.id);
@@ -185,7 +187,7 @@ export function ProductFormDialog({ open, onOpenChange, product, type, isBestsel
         
         toast({
           title: `Product ${product ? 'Updated' : 'Added'}`,
-          description: `The product "${data.name}" has been successfully ${product ? 'updated' : 'saved'}.`,
+          description: `The product "${data.name}" has been successfully saved.`,
         });
 
         onOpenChange(false);
